@@ -35,6 +35,7 @@ docker compose run --rm web bin/rails console
 | `POST` | `/quotes/:id/bind` | Needs an `Idempotency-Key` header. `201` new policy, `200` same key retried, `409` already bound, `422` expired |
 | `GET` | `/policies` | Every policy with its quote's address. Eager-loads quotes to avoid N+1 queries |
 | `GET` | `/policies/:id` | |
+| `POST` | `/policies/:id/cancel` | Cancels as of today. `200` with `refund_cents`, `409` already cancelled, `422` already expired |
 
 ```bash
 curl -X POST localhost:3000/quotes -H "Content-Type: application/json" \
@@ -52,6 +53,7 @@ Money is stored as integer cents (`premium_cents`), never floats.
 - A quote is valid for 30 days. `ExpireQuotesJob` marks pending quotes past `expires_at` as `expired`, but binding always checks the clock (`past_expiry?`), so a quote can't be bound late even if the job hasn't run yet. The job isn't scheduled yet; it needs a recurring runner such as Solid Queue or cron.
 - A quote can become at most one policy. This is enforced three ways: a row lock while binding, a model validation, and a unique index in Postgres.
 - Retrying a bind with the same `Idempotency-Key` returns the original policy instead of failing.
+- Cancelling refunds the unused premium pro rata by day (`ProRataRefund`). Coverage runs from `effective_on` up to, not including, `expires_on`, and a cancellation takes effect at the start of its date: cancelling on day one refunds everything, on the last covered day refunds one day. Leap-year terms are 366 days. Refunds round down to the cent, and Postgres rejects a refund larger than the premium.
 
 ## Where each Rails concept lives
 
@@ -79,6 +81,6 @@ Do these yourself. Each one is a common Rails interview topic.
 1. ✅ **N+1 queries.** Add `GET /policies` that lists policies with their quote's address. Watch the log for one query per policy, then fix it with `includes(:quote)`.
 2. ✅ **Scopes.** Add `Quote.active` (pending and not expired) and a spec for it.
 3. ✅ **Background job.** Add an ActiveJob that marks pending quotes past `expires_at` as `expired`. You'll need a new enum value and a migration to update the check constraint.
-4. **Cancellation.** Add `POST /policies/:id/cancel` that refunds the unused premium pro rata. Put the math in a service and test the edge days.
+4. ✅ **Cancellation.** Add `POST /policies/:id/cancel` that refunds the unused premium pro rata. Put the math in a service and test the edge days.
 5. **Validation vs. constraint.** Delete the unique index on `policies.quote_id` and the `with_lock` call, then run the concurrency spec. See why the model validation alone isn't enough.
 6. **Pagination and filtering.** `GET /quotes?state=FL&page=2` with a spec for each.
