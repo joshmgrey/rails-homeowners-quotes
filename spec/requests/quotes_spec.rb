@@ -14,6 +14,112 @@ RSpec.describe "Quotes API", type: :request do
     }
   end
 
+  describe "GET /quotes" do
+    def returned_ids = response.parsed_body["quotes"].map { |q| q["id"] }
+    def meta = response.parsed_body["meta"]
+
+    it "lists quotes in id order with pagination metadata" do
+      quotes = create_list(:quote, 3)
+
+      get "/quotes"
+
+      expect(response).to have_http_status(:ok)
+      expect(returned_ids).to eq(quotes.map(&:id))
+      expect(meta).to eq("page" => 1, "per_page" => 20, "total" => 3, "total_pages" => 1)
+    end
+
+    describe "filtering by state" do
+      it "returns only quotes in that state" do
+        fl = create(:quote, state: "FL")
+        create(:quote, state: "TX")
+
+        get "/quotes", params: { state: "FL" }
+
+        expect(returned_ids).to eq([ fl.id ])
+        expect(meta["total"]).to eq(1)
+      end
+
+      it "is case-insensitive" do
+        fl = create(:quote, state: "FL")
+
+        get "/quotes", params: { state: "fl" }
+
+        expect(returned_ids).to eq([ fl.id ])
+      end
+
+      it "returns an empty list for a state with no quotes" do
+        create(:quote, state: "FL")
+
+        get "/quotes", params: { state: "NY" }
+
+        expect(returned_ids).to be_empty
+        expect(meta["total"]).to eq(0)
+      end
+    end
+
+    describe "pagination" do
+      let!(:quotes) { create_list(:quote, 25) }
+
+      it "returns the first 20 on page 1" do
+        get "/quotes"
+
+        expect(returned_ids).to eq(quotes.first(20).map(&:id))
+        expect(meta).to include("total" => 25, "total_pages" => 2)
+      end
+
+      it "returns the rest on page 2" do
+        get "/quotes", params: { page: 2 }
+
+        expect(returned_ids).to eq(quotes.last(5).map(&:id))
+        expect(meta["page"]).to eq(2)
+      end
+
+      it "returns an empty page past the end" do
+        get "/quotes", params: { page: 3 }
+
+        expect(response).to have_http_status(:ok)
+        expect(returned_ids).to be_empty
+      end
+
+      it "accepts per_page" do
+        get "/quotes", params: { per_page: 10, page: 3 }
+
+        expect(returned_ids).to eq(quotes.last(5).map(&:id))
+        expect(meta).to include("per_page" => 10, "total_pages" => 3)
+      end
+
+      it "caps per_page at 100" do
+        get "/quotes", params: { per_page: 500 }
+
+        expect(meta["per_page"]).to eq(100)
+      end
+
+      %w[0 -1 abc 1.5].each do |bad|
+        it "returns 400 for page=#{bad}" do
+          get "/quotes", params: { page: bad }
+
+          expect(response).to have_http_status(:bad_request)
+          expect(response.parsed_body["error"]).to eq("page must be a positive integer")
+        end
+      end
+
+      it "returns 400 for per_page=0" do
+        get "/quotes", params: { per_page: 0 }
+
+        expect(response).to have_http_status(:bad_request)
+      end
+    end
+
+    it "combines a state filter with pagination" do
+      fl = Array.new(3) { create(:quote, state: "FL").tap { create(:quote, state: "TX") } }
+
+      get "/quotes", params: { state: "FL", page: 2, per_page: 2 }
+
+      expect(returned_ids).to eq([ fl.last.id ])
+      expect(meta).to eq("page" => 2, "per_page" => 2, "total" => 3, "total_pages" => 2)
+    end
+  end
+
   describe "POST /quotes" do
     it "creates a priced quote" do
       post "/quotes", params: valid_params, as: :json

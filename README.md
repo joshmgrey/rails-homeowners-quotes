@@ -30,6 +30,7 @@ docker compose run --rm web bin/rails console
 
 | Method | Path | Notes |
 |---|---|---|
+| `GET` | `/quotes` | Optional `state` (case-insensitive), `page` (default 1), `per_page` (default 20, max 100). Ordered by id. Returns `quotes` plus `meta` with `total` and `total_pages`. `400` for a non-positive or non-integer `page`/`per_page` |
 | `POST` | `/quotes` | Prices a quote. `201`, or `422` with `errors` |
 | `GET` | `/quotes/:id` | |
 | `POST` | `/quotes/:id/bind` | Needs an `Idempotency-Key` header. `201` new policy, `200` same key retried, `409` already bound, `422` expired |
@@ -103,4 +104,4 @@ Do these yourself. Each one is a common Rails interview topic.
 3. ✅ **Background job.** Add an ActiveJob that marks pending quotes past `expires_at` as `expired`. You'll need a new enum value and a migration to update the check constraint.
 4. ✅ **Cancellation.** Add `POST /policies/:id/cancel` that refunds the unused premium pro rata. Put the math in a service and test the edge days.
 5. ✅ **Validation vs. constraint.** Delete the unique index on `policies.quote_id` and the `with_lock` call, then run the concurrency spec. See why the model validation alone isn't enough. Results are in [the race experiment](#race-experiment-why-the-validation-isnt-enough).
-6. **Pagination and filtering.** `GET /quotes?state=FL&page=2` with a spec for each.
+6. ✅ **Pagination and filtering.** `GET /quotes?state=FL&page=2` with a spec for each.
