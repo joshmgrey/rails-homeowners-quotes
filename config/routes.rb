@@ -6,5 +6,7 @@ Rails.application.routes.draw do
     post :bind, on: :member
   end
 
-  resources :policies, only: %i[index show]
+  resources :policies, only: %i[index show] do
+    post :cancel, on: :member
+  end
 end

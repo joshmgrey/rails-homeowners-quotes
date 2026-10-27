@@ -9,4 +9,14 @@ class PoliciesController < ApplicationController
   def show
     render json: Policy.find(params[:id])
   end
+
+  # POST /policies/:id/cancel
+  # Cancels as of today and returns the policy with its pro rata refund.
+  def cancel
+    render json: PolicyCanceller.call(policy: Policy.find(params[:id]))
+  rescue PolicyCanceller::AlreadyCancelled => e
+    render json: { error: e.message }, status: :conflict
+  rescue PolicyCanceller::PolicyExpired => e
+    render json: { error: e.message }, status: :unprocessable_content
+  end
 end
