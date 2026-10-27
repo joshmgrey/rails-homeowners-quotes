@@ -51,9 +51,29 @@ Money is stored as integer cents (`premium_cents`), never floats.
 - We write in FL, TX, LA, AL and SC. Coverage must be $100K to $2M.
 - Premium = coverage (per $1,000) × state base rate × roof-age factor × home-age factor, with a $500 minimum. See `PremiumCalculator`.
 - A quote is valid for 30 days. `ExpireQuotesJob` marks pending quotes past `expires_at` as `expired`, but binding always checks the clock (`past_expiry?`), so a quote can't be bound late even if the job hasn't run yet. The job isn't scheduled yet; it needs a recurring runner such as Solid Queue or cron.
-- A quote can become at most one policy. This is enforced three ways: a row lock while binding, a model validation, and a unique index in Postgres.
+- A quote can become at most one policy. This is enforced three ways: a row lock while binding, a model validation, and a unique index in Postgres. See [the race experiment](#race-experiment-why-the-validation-isnt-enough) for what each one actually does.
 - Retrying a bind with the same `Idempotency-Key` returns the original policy instead of failing.
 - Cancelling refunds the unused premium pro rata by day (`ProRataRefund`). Coverage runs from `effective_on` up to, not including, `expires_on`, and a cancellation takes effect at the start of its date: cancelling on day one refunds everything, on the last covered day refunds one day. Leap-year terms are 366 days. Refunds round down to the cent, and Postgres rejects a refund larger than the premium.
+
+## Race experiment: why the validation isn't enough
+
+To test what each safeguard does, I removed `with_lock` from `QuoteBinder` and dropped the unique index on `policies.quote_id` with a migration, on a throwaway branch. Then I had 4 threads bind the same quote at once, 10 times per setup, and counted the policies created.
+
+| Setup | Quotes with duplicate policies | What the 3 losing threads got |
+|---|---|---|
+| Validation only | **9 / 10** (4 policies each) | Nothing; all 4 "succeeded" |
+| Lock, no index | 0 / 10 | Clean `409 AlreadyBound` |
+| Index, no lock | 0 / 10 | `RecordNotUnique` exception (a 500) |
+| All three (the real code) | 0 / 10 | Clean `409 AlreadyBound` |
+
+With validation only, the concurrency spec failed 5 of 5 runs ("expected: 1, got: 4", or an unhandled `RecordInvalid`).
+
+**Why:** `validates :quote_id, uniqueness: true` is a `SELECT` followed by a separate `INSERT`. Concurrent requests all run their `SELECT` before any `INSERT` lands, so they all see "no policy yet" and all insert.
+
+**What each layer is for:**
+- **Unique index**: the guarantee. Postgres checks and inserts atomically, for every code path that writes a policy (the binder, the console, a future import).
+- **Row lock**: makes concurrent binds take turns, so the second one sees the first policy and gets a clean 409 instead of a database error.
+- **Validation**: a friendly error message when requests don't overlap.
 
 ## Where each Rails concept lives
 
@@ -82,5 +102,5 @@ Do these yourself. Each one is a common Rails interview topic.
 2. ✅ **Scopes.** Add `Quote.active` (pending and not expired) and a spec for it.
 3. ✅ **Background job.** Add an ActiveJob that marks pending quotes past `expires_at` as `expired`. You'll need a new enum value and a migration to update the check constraint.
 4. ✅ **Cancellation.** Add `POST /policies/:id/cancel` that refunds the unused premium pro rata. Put the math in a service and test the edge days.
-5. **Validation vs. constraint.** Delete the unique index on `policies.quote_id` and the `with_lock` call, then run the concurrency spec. See why the model validation alone isn't enough.
+5. ✅ **Validation vs. constraint.** Delete the unique index on `policies.quote_id` and the `with_lock` call, then run the concurrency spec. See why the model validation alone isn't enough. Results are in [the race experiment](#race-experiment-why-the-validation-isnt-enough).
 6. **Pagination and filtering.** `GET /quotes?state=FL&page=2` with a spec for each.
