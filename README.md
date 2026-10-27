@@ -49,7 +49,7 @@ Money is stored as integer cents (`premium_cents`), never floats.
 
 - We write in FL, TX, LA, AL and SC. Coverage must be $100K to $2M.
 - Premium = coverage (per $1,000) × state base rate × roof-age factor × home-age factor, with a $500 minimum. See `PremiumCalculator`.
-- A quote is valid for 30 days.
+- A quote is valid for 30 days. `ExpireQuotesJob` marks pending quotes past `expires_at` as `expired`, but binding always checks the clock (`past_expiry?`), so a quote can't be bound late even if the job hasn't run yet. The job isn't scheduled yet; it needs a recurring runner such as Solid Queue or cron.
 - A quote can become at most one policy. This is enforced three ways: a row lock while binding, a model validation, and a unique index in Postgres.
 - Retrying a bind with the same `Idempotency-Key` returns the original policy instead of failing.
 
@@ -61,7 +61,9 @@ Money is stored as integer cents (`premium_cents`), never floats.
 | ActiveRecord model, validations, `enum` | `app/models/quote.rb` | Prisma model + Zod |
 | Associations (`has_one` / `belongs_to`) | `app/models/quote.rb`, `app/models/policy.rb` | Prisma relations, JPA `@OneToOne` |
 | Callbacks (`before_create`) | `app/models/quote.rb` | Prisma middleware, JPA `@PrePersist` |
+| Scopes (`active`, `past_expiry`) | `app/models/quote.rb` | Prisma `where` helpers, JPA named queries |
 | Plain Ruby service objects | `app/services/` | NestJS providers |
+| Background jobs (ActiveJob), bulk `update_all` | `app/jobs/expire_quotes_job.rb` | BullMQ worker, `updateMany` |
 | Row locking (`with_lock`) + transaction | `app/services/quote_binder.rb` | `SELECT ... FOR UPDATE` in a Prisma `$transaction` |
 | Strong params (`params.expect`) | `app/controllers/quotes_controller.rb` | NestJS DTO + ValidationPipe |
 | `rescue_from` error mapping | `app/controllers/application_controller.rb` | NestJS exception filters |
@@ -74,9 +76,9 @@ Money is stored as integer cents (`premium_cents`), never floats.
 
 Do these yourself. Each one is a common Rails interview topic.
 
-1. **N+1 queries.** Add `GET /policies` that lists policies with their quote's address. Watch the log for one query per policy, then fix it with `includes(:quote)`.
-2. **Scopes.** Add `Quote.active` (pending and not expired) and a spec for it.
-3. **Background job.** Add an ActiveJob that marks pending quotes past `expires_at` as `expired`. You'll need a new enum value and a migration to update the check constraint.
+1. ✅ **N+1 queries.** Add `GET /policies` that lists policies with their quote's address. Watch the log for one query per policy, then fix it with `includes(:quote)`.
+2. ✅ **Scopes.** Add `Quote.active` (pending and not expired) and a spec for it.
+3. ✅ **Background job.** Add an ActiveJob that marks pending quotes past `expires_at` as `expired`. You'll need a new enum value and a migration to update the check constraint.
 4. **Cancellation.** Add `POST /policies/:id/cancel` that refunds the unused premium pro rata. Put the math in a service and test the edge days.
 5. **Validation vs. constraint.** Delete the unique index on `policies.quote_id` and the `with_lock` call, then run the concurrency spec. See why the model validation alone isn't enough.
 6. **Pagination and filtering.** `GET /quotes?state=FL&page=2` with a spec for each.

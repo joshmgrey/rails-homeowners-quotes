@@ -30,7 +30,9 @@ class QuoteBinder
       if policy
         raise AlreadyBound, "quote #{@quote.id} is already bound" unless policy.idempotency_key == @idempotency_key
       else
-        raise QuoteExpired, "quote #{@quote.id} has expired" if @quote.expired?
+        # past_expiry? covers both cases: already marked expired by
+        # ExpireQuotesJob, or past expires_at but the job hasn't run yet.
+        raise QuoteExpired, "quote #{@quote.id} has expired" if @quote.past_expiry?
 
         policy = @quote.create_policy!(
           policy_number: Policy.generate_number,

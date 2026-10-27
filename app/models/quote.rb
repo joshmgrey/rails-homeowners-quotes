@@ -5,11 +5,14 @@ class Quote < ApplicationRecord
 
   has_one :policy, dependent: :restrict_with_error
 
-  enum :status, { pending: "pending", bound: "bound" }, validate: true
+  # "expired" is set by ExpireQuotesJob, so it can lag behind the clock.
+  # Anything that must be exact (binding) checks #past_expiry? instead.
+  enum :status, { pending: "pending", bound: "bound", expired: "expired" }, validate: true
 
-  # Quotes a homeowner could still bind. Uses > (not >=) to match #expired?,
-  # so a quote is never both active and expired at the same instant.
+  # Quotes a homeowner could still bind. Uses > (not >=) to match #past_expiry?,
+  # so a quote is never both active and past expiry at the same instant.
   scope :active, -> { pending.where("expires_at > ?", Time.current) }
+  scope :past_expiry, -> { where("expires_at <= ?", Time.current) }
 
   validates :state, inclusion: { in: PremiumCalculator::BASE_RATES.keys, message: "is not a state we write in" }
   validates :street_address, presence: true
@@ -25,7 +28,8 @@ class Quote < ApplicationRecord
   # Runs after validation passes, so the calculator always gets clean inputs.
   before_create :assign_premium_and_expiry
 
-  def expired?
+  # Time-based, unlike the enum's #expired?, which reflects the status column.
+  def past_expiry?
     expires_at <= Time.current
   end
 
