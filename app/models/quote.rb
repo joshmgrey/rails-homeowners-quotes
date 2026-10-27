@@ -7,6 +7,10 @@ class Quote < ApplicationRecord
 
   enum :status, { pending: "pending", bound: "bound" }, validate: true
 
+  # Quotes a homeowner could still bind. Uses > (not >=) to match #expired?,
+  # so a quote is never both active and expired at the same instant.
+  scope :active, -> { pending.where("expires_at > ?", Time.current) }
+
   validates :state, inclusion: { in: PremiumCalculator::BASE_RATES.keys, message: "is not a state we write in" }
   validates :street_address, presence: true
   validates :zip, format: { with: /\A\d{5}\z/ }
