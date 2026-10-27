@@ -7,8 +7,9 @@ FactoryBot.define do
     roof_age_years { 8 }
     dwelling_coverage_cents { 300_000_00 }
 
+    # Still "pending", but past expires_at: what ExpireQuotesJob looks for.
     # expires_at is set by a before_create callback, so overwrite it afterwards.
-    trait :expired do
+    trait :past_expiry do
       after(:create) { |quote| quote.update_column(:expires_at, 1.minute.ago) }
     end
   end

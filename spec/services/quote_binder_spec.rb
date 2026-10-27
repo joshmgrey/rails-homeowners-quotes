@@ -28,12 +28,21 @@ RSpec.describe QuoteBinder do
       .to raise_error(QuoteBinder::AlreadyBound)
   end
 
-  it "refuses to bind an expired quote" do
-    expired = create(:quote, :expired)
+  it "refuses to bind a quote past expiry that the job hasn't marked yet" do
+    expired = create(:quote, :past_expiry)
 
     expect { described_class.call(quote: expired, idempotency_key: "key-1") }
       .to raise_error(QuoteBinder::QuoteExpired)
     expect(expired.reload).to be_pending
+  end
+
+  it "refuses to bind a quote ExpireQuotesJob already marked expired" do
+    expired = create(:quote, :past_expiry)
+    ExpireQuotesJob.perform_now
+
+    expect { described_class.call(quote: expired, idempotency_key: "key-1") }
+      .to raise_error(QuoteBinder::QuoteExpired)
+    expect(expired.reload).to be_expired
   end
 
   it "refuses a key that was already used for a different quote" do

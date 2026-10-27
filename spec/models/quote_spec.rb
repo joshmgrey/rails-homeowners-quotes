@@ -38,8 +38,8 @@ RSpec.describe Quote, type: :model do
       expect(Quote.active).to contain_exactly(quote)
     end
 
-    it "excludes expired quotes" do
-      create(:quote, :expired)
+    it "excludes pending quotes past expiry, even before the job marks them" do
+      create(:quote, :past_expiry)
 
       expect(Quote.active).to be_empty
     end
@@ -51,12 +51,12 @@ RSpec.describe Quote, type: :model do
       expect(Quote.active).to be_empty
     end
 
-    it "excludes a quote at the exact moment it expires, matching #expired?" do
+    it "excludes a quote at the exact moment it expires, matching #past_expiry?" do
       freeze_time do
         quote = create(:quote)
         quote.update_column(:expires_at, Time.current)
 
-        expect(quote).to be_expired
+        expect(quote).to be_past_expiry
         expect(Quote.active).to be_empty
       end
     end
@@ -69,12 +69,38 @@ RSpec.describe Quote, type: :model do
     end
   end
 
-  describe "#expired?" do
+  describe "#past_expiry?" do
     it "is false before expires_at and true after" do
       quote = create(:quote)
 
+      expect(quote).not_to be_past_expiry
+      travel_to(31.days.from_now) { expect(quote).to be_past_expiry }
+    end
+  end
+
+  describe "#expired? (the status enum)" do
+    it "reflects the status column, not the clock" do
+      quote = create(:quote, :past_expiry)
+
+      expect(quote).to be_past_expiry
       expect(quote).not_to be_expired
-      travel_to(31.days.from_now) { expect(quote).to be_expired }
+    end
+  end
+
+  describe "status check constraint" do
+    it "allows expired" do
+      quote = create(:quote)
+
+      expect { quote.update_column(:status, "expired") }.not_to raise_error
+    end
+
+    # update_column skips model validations, so this proves the database
+    # itself rejects bad values.
+    it "rejects values outside the enum at the database level" do
+      quote = create(:quote)
+
+      expect { quote.update_column(:status, "cancelled") }
+        .to raise_error(ActiveRecord::StatementInvalid, /quotes_status_check/)
     end
   end
 end
