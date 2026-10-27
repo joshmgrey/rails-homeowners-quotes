@@ -1,5 +1,9 @@
 # See https://git-scm.com/docs/gitattributes for more about git attribute files.
 
+# Keep LF on checkout, even with core.autocrlf on Windows. The app runs in a
+# Linux container, where CRLF breaks bin/ scripts.
+* text=auto eol=lf
+
 # Mark the database schema as having been generated.
 db/schema.rb linguist-generated
 
