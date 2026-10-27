@@ -31,6 +31,44 @@ RSpec.describe Quote, type: :model do
     expect(build(:quote, year_built: Date.current.year + 1)).not_to be_valid
   end
 
+  describe ".active" do
+    it "includes pending quotes that have not expired" do
+      quote = create(:quote)
+
+      expect(Quote.active).to contain_exactly(quote)
+    end
+
+    it "excludes expired quotes" do
+      create(:quote, :expired)
+
+      expect(Quote.active).to be_empty
+    end
+
+    it "excludes bound quotes" do
+      quote = create(:quote)
+      QuoteBinder.call(quote: quote, idempotency_key: "key-1")
+
+      expect(Quote.active).to be_empty
+    end
+
+    it "excludes a quote at the exact moment it expires, matching #expired?" do
+      freeze_time do
+        quote = create(:quote)
+        quote.update_column(:expires_at, Time.current)
+
+        expect(quote).to be_expired
+        expect(Quote.active).to be_empty
+      end
+    end
+
+    it "can be chained with other conditions" do
+      fl = create(:quote, state: "FL")
+      create(:quote, state: "TX")
+
+      expect(Quote.active.where(state: "FL")).to contain_exactly(fl)
+    end
+  end
+
   describe "#expired?" do
     it "is false before expires_at and true after" do
       quote = create(:quote)
