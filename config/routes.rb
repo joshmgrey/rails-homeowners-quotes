@@ -6,5 +6,5 @@ Rails.application.routes.draw do
     post :bind, on: :member
   end
 
-  resources :policies, only: :show
+  resources :policies, only: %i[index show]
 end
