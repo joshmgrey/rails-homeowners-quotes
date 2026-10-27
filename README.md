@@ -33,6 +33,7 @@ docker compose run --rm web bin/rails console
 | `POST` | `/quotes` | Prices a quote. `201`, or `422` with `errors` |
 | `GET` | `/quotes/:id` | |
 | `POST` | `/quotes/:id/bind` | Needs an `Idempotency-Key` header. `201` new policy, `200` same key retried, `409` already bound, `422` expired |
+| `GET` | `/policies` | Every policy with its quote's address. Eager-loads quotes to avoid N+1 queries |
 | `GET` | `/policies/:id` | |
 
 ```bash
