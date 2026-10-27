@@ -1,4 +1,6 @@
-# Kin Quotes
+# Rails Homeowners Quotes
+
+[![CI](https://github.com/joshmgrey/rails-homeowners-quotes/actions/workflows/ci.yml/badge.svg)](https://github.com/joshmgrey/rails-homeowners-quotes/actions/workflows/ci.yml)
 
 A small homeowners insurance API in Ruby on Rails: price a quote, then bind it into a policy.
 Built to learn Rails conventions with a domain that has real correctness rules
